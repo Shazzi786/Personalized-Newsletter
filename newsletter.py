@@ -18,9 +18,7 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv          # pip: python-dotenv
 
 # --- AI / LLM ---
-import openai                           # pip: openai          (GPT-4 / GPT-3.5)
-# import anthropic                      # pip: anthropic       (Claude – uncomment if using)
-# import google.generativeai as genai  # pip: google-generativeai (Gemini – uncomment if using)
+import google.generativeai as genai     # pip: google-generativeai  (Gemini)
 
 # --- News & Web Content Fetching ---
 import requests                         # pip: requests
@@ -56,11 +54,15 @@ from jinja2 import Environment, FileSystemLoader  # pip: jinja2
 # ============================================================
 load_dotenv()
 
-OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY", "")
-EMAIL_ADDRESS   = os.getenv("EMAIL_ADDRESS", "")
-EMAIL_PASSWORD  = os.getenv("EMAIL_PASSWORD", "")
-SMTP_HOST       = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT       = int(os.getenv("SMTP_PORT", 587))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")        # stored in .env
+EMAIL_ADDRESS  = os.getenv("EMAIL_ADDRESS", "")         # stored in .env
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")        # stored in .env
+SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT      = int(os.getenv("SMTP_PORT", 587))
+
+# Configure the Gemini client using the key from .env
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ============================================================
 #  Logging
@@ -129,33 +131,28 @@ def scrape_article_content(url: str) -> str:
 #  SECTION 2 – Summarize & Personalize with AI
 # ============================================================
 
-def summarize_with_openai(text: str, topic: str = "", max_tokens: int = 200) -> str:
+def summarize_with_gemini(text: str, topic: str = "") -> str:
     """
-    Summarize article text using OpenAI's Chat API.
+    Summarize article text using Google Gemini (free tier available).
 
     Args:
-        text:       Full article text to summarize.
-        topic:      User's interest topic for personalization context.
-        max_tokens: Max tokens for the summary response.
+        text:   Full article text to summarize.
+        topic:  User's interest topic for personalization context.
 
     Returns:
         AI-generated summary string.
     """
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
     prompt = (
         f"You are an expert newsletter writer. Summarize the following article "
         f"in 3-4 sentences, highlighting insights relevant to '{topic}'.\n\n"
-        f"Article:\n{text[:3000]}"  # Truncate to avoid token limits
+        f"Article:\n{text[:3000]}"
     )
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=0.7,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = gemini_model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Gemini summarization failed: {e}")
+        return text[:300] + "..."  # Plain truncation as last-resort fallback
 
 
 def rank_articles_by_interest(articles: list[dict], user_interests: list[str]) -> list[dict]:
@@ -348,10 +345,10 @@ def run_newsletter_pipeline():
         ranked = rank_articles_by_interest(articles, user["interests"])
         top_articles = ranked[:5]  # Top 5 most relevant
 
-        # 4. Summarize each article with AI
+        # 4. Summarize each article with AI (Gemini)
         for article in top_articles:
             content = scrape_article_content(article["link"])
-            article["ai_summary"] = summarize_with_openai(
+            article["ai_summary"] = summarize_with_gemini(
                 content or article["summary"],
                 topic=", ".join(user["interests"]),
             )

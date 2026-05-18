@@ -4,9 +4,7 @@
 # ============================================================
 
 # AI / LLM
-openai>=1.30.0
-# anthropic>=0.25.0         # Uncomment if using Claude
-# google-generativeai>=0.5  # Uncomment if using Gemini
+google-generativeai>=0.7.0             # Gemini API SDK
 
 # News & Web scraping
 requests>=2.31.0
